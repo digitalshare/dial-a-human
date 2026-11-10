@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dial-a-Human</title>
+    <style>
+      :root {
+        --bg: #0e1116;
+        --panel: #161b22;
+        --panel-2: #1d232c;
+        --line: #2a323d;
+        --text: #e6edf3;
+        --muted: #8b98a8;
+        --teal: #2dd4bf;
+        --amber: #fbbf24;
+        --red: #f87171;
+        --green: #4ade80;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 16px;
+        height: 100%;
+        padding: 16px;
+      }
+      .stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+      header { display: flex; align-items: baseline; gap: 12px; }
+      h1 { font-size: 18px; margin: 0; letter-spacing: 0.2px; }
+      header span { color: var(--muted); }
+      .canvas-wrap {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      canvas {
+        /* as large as fits: limited by the panel width or by the viewport height */
+        width: min(100%, calc((100vh - 170px) * 19 / 13));
+        border-radius: 6px;
+        cursor: crosshair;
+      }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .controls .hint { color: var(--muted); margin-left: auto; font-size: 12px; }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      button:hover { border-color: #3d4856; }
+      button.armed { border-color: var(--amber); color: var(--amber); }
+      button.primary { background: var(--green); border-color: var(--green); color: #052e16; font-weight: 600; }
+      button.danger { background: transparent; border-color: var(--red); color: var(--red); }
+
+      aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .status-row { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--teal); flex: none; }
+      .stats { display: flex; gap: 16px; margin-top: 8px; color: var(--muted); font-size: 13px; }
+      .stats b { color: var(--text); font-weight: 600; }
+
+      #call { display: none; border-color: var(--amber); }
+      #call.show { display: block; }
+      #call.ringing { animation: ring 1s ease-in-out infinite; }
+      #call.live { border-color: var(--green); }
+      #call.error { border-color: var(--red); }
+      @keyframes ring {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5); }
+        50% { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); }
+      }
+      #call-title { font-weight: 600; font-size: 15px; }
+      #call-sub { color: var(--muted); margin: 4px 0 10px; }
+      #call-actions { display: flex; gap: 8px; }
+
+      .scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+      .scroll .list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+      .line { padding: 6px 9px; border-radius: 8px; background: var(--panel-2); }
+      .line.assistant { border-left: 3px solid var(--teal); }
+      .line.user { border-left: 3px solid var(--amber); }
+      .line small { display: block; color: var(--muted); font-size: 11px; }
+      .log { font-size: 12.5px; color: var(--muted); }
+      .log.warn { color: var(--amber); }
+      .log.good { color: var(--green); }
+      .empty { color: var(--muted); font-size: 13px; }
+
+      @media (max-width: 900px) {
+        .app { grid-template-columns: 1fr; height: auto; }
+        .scroll .list { max-height: 220px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <section class="stage">
+        <header>
+          <h1>Dial-a-Human</h1>
+          <span>The warehouse robot that calls you when it cannot decide alone</span>
+        </header>
+        <div class="canvas-wrap"><canvas id="floor"></canvas></div>
+        <div class="controls">
+          <button id="btn-spill">Spill a pallet ahead</button>
+          <button id="btn-unlabelled">Unlabelled package</button>
+          <button id="btn-clear">Clear obstacles</button>
+          <span class="hint">Click any floor cell to drop or remove an obstacle</span>
+        </div>
+      </section>
+
+      <aside>
+        <div class="card">
+          <h2>Robot</h2>
+          <div class="status-row"><span class="dot" id="status-dot"></span><span id="status-text">Starting</span></div>
+          <div class="stats">
+            <span>Delivered <b id="stat-delivered">0</b></span>
+            <span>Battery <b id="stat-battery">87%</b></span>
+            <span>Mode <b id="stat-mode">…</b></span>
+          </div>
+        </div>
+
+        <div class="card" id="call">
+          <h2>Call</h2>
+          <div id="call-title"></div>
+          <div id="call-sub"></div>
+          <div id="call-actions"></div>
+        </div>
+
+        <div class="card scroll">
+          <h2>Call transcript</h2>
+          <div class="list" id="transcript"><div class="empty">Nothing yet. The robot only calls when it is stuck.</div></div>
+        </div>
+
+        <div class="card scroll">
+          <h2>Event log</h2>
+          <div class="list" id="log"></div>
+        </div>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
